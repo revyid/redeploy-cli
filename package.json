@@ -1,0 +1,44 @@
+{
+    "name": "redeploy-cli",
+    "version": "1.0.0",
+    "description": "ReDeploy CLI — Deploy to the edge from your terminal",
+    "author": "ReDeploy",
+    "license": "MIT",
+    "bin": {
+        "redeploy": "./bin/redeploy.js"
+    },
+    "main": "./src/index.js",
+    "files": [
+        "bin/",
+        "src/",
+        "scripts/",
+        "LICENSE",
+        "README.md"
+    ],
+    "scripts": {
+        "postinstall": "node scripts/postinstall.js"
+    },
+    "dependencies": {
+        "archiver": "^7.0.1",
+        "chalk": "^5.4.1",
+        "commander": "^13.1.0",
+        "conf": "^13.1.0",
+        "node-fetch": "^3.3.2",
+        "open": "^10.1.2",
+        "ora": "^8.2.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "keywords": [
+        "redeploy",
+        "deploy",
+        "cli",
+        "vercel",
+        "edge"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/revyid/redeploy"
+    }
+}
