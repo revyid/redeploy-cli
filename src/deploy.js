@@ -1,6 +1,6 @@
 /**
  * ReDeploy CLI — Deploy Module
- * Handles project zipping, upload, and live log streaming.
+ * Handles project file collection, upload, and live log streaming.
  * 
  * @module redeploy/deploy
  * @private
@@ -60,7 +60,6 @@ function matchesGitignore(relPath, patterns) {
 
         // Path prefix match
         if (normalized.startsWith(clean + "/")) return true;
-        if (normalized.startsWith(clean)) return true;
     }
     return false;
 }
@@ -93,8 +92,8 @@ function collectFiles(dir, baseDir, gitignorePatterns, files = []) {
                 if (stat.size > MAX_FILE_SIZE || stat.size === 0) continue;
 
                 files.push({
-                    path: relPath,
-                    content: fs.readFileSync(fullPath),
+                    file: relPath,
+                    data: fs.readFileSync(fullPath).toString("base64"),
                     size: stat.size,
                 });
             } catch {
@@ -172,64 +171,44 @@ async function deploy(options = {}) {
         process.exit(1);
     }
 
-    spinner.text = `Packaging ${files.length} files...`;
-
-    // Create zip in memory
-    const archiver = (await import("archiver")).default;
-    const { PassThrough } = require("stream");
-
-    const chunks = [];
-    const passthrough = new PassThrough();
-    passthrough.on("data", (chunk) => chunks.push(chunk));
-
-    const archive = archiver("zip", { zlib: { level: 6 } }); // level 6 = faster
-    archive.pipe(passthrough);
-
-    for (const file of files) {
-        archive.append(file.content, { name: file.path });
-    }
-
-    archive.on("error", (err) => {
-        spinner.fail(chalk.red(`Packaging failed: ${err.message}`));
-        process.exit(1);
-    });
-
-    await archive.finalize();
-    await new Promise((resolve) => passthrough.on("end", resolve));
-
-    const zipBuffer = Buffer.concat(chunks);
     const totalSize = files.reduce((s, f) => s + f.size, 0);
-
     spinner.succeed(chalk.green(
-        `Packaged ${files.length} files (${(totalSize / 1024).toFixed(0)} KB → ${(zipBuffer.length / 1024).toFixed(0)} KB zipped)`
+        `Found ${files.length} files (${(totalSize / 1024).toFixed(0)} KB)`
     ));
 
     if (gitignorePatterns.length > 0) {
         console.log(chalk.dim(`  .gitignore: ${gitignorePatterns.length} patterns applied`));
     }
 
-    // Upload
+    // Upload as JSON (no zip — instant)
     const uploadSpinner = ora("Uploading to ReDeploy...").start();
 
     try {
-        const form = new FormData();
-        form.set("project_name", projectName);
-        form.set("file", new Blob([zipBuffer], { type: "application/zip" }), `${projectName}.zip`);
-        if (slug) form.set("vercel_slug", slug);
-        form.set("framework", framework);
+        const payload = {
+            project_name: projectName,
+            framework,
+            files: files.map(f => ({ file: f.file, data: f.data })),
+        };
+        if (slug) payload.slug = slug;
 
         // Env vars from .redeploy.json
         if (projectConfig?.env && Object.keys(projectConfig.env).length > 0) {
-            form.set("env_vars", JSON.stringify(projectConfig.env));
+            payload.env_vars = projectConfig.env;
         }
 
+        const body = JSON.stringify(payload);
+        uploadSpinner.text = `Uploading ${files.length} files (${(Buffer.byteLength(body) / 1024).toFixed(0)} KB)...`;
+
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+        const timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout
 
         const res = await fetch(`${baseUrl}/api/deploy/cli`, {
             method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-            body: form,
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+            },
+            body,
             signal: controller.signal,
         });
 
@@ -273,7 +252,7 @@ async function deploy(options = {}) {
 
     } catch (err) {
         if (err.name === "AbortError") {
-            uploadSpinner.fail(chalk.red("Upload timed out (60s). Check your network connection."));
+            uploadSpinner.fail(chalk.red("Upload timed out (120s). Check your network connection."));
         } else {
             uploadSpinner.fail(chalk.red(`Upload failed: ${err.message}`));
         }

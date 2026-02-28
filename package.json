@@ -17,7 +17,6 @@
     ],
     "scripts": {},
     "dependencies": {
-        "archiver": "^7.0.1",
         "chalk": "^5.4.1",
         "commander": "^13.1.0",
         "open": "^10.1.2",
