@@ -1,5 +1,5 @@
 /**
- * DevScale CLI — Configuration Manager
+ * ReDeploy CLI — Configuration Manager
  * Handles persistent CLI configuration storage.
  * 
  * @module redeploy/config
