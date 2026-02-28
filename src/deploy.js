@@ -12,41 +12,127 @@ const fs = require("fs");
 const path = require("path");
 const config = require("./config");
 
-const IGNORE_DIRS = new Set([
+const ALWAYS_IGNORE_DIRS = new Set([
     "node_modules", ".git", ".next", ".vercel", "__pycache__",
-    ".DS_Store", "dist", ".cache", ".turbo", ".svelte-kit",
-    ".nuxt", ".output", "build", "coverage", ".nyc_output",
+    ".DS_Store", ".cache", ".turbo", ".svelte-kit",
+    ".nuxt", ".output", "coverage", ".nyc_output", ".redeploy",
 ]);
-const IGNORE_EXTS = new Set([".lock", ".log", ".map"]);
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const ALWAYS_IGNORE_FILES = new Set([
+    ".redeploy.json", ".env.local", ".env.production",
+]);
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB per file
 
-function collectFiles(dir, baseDir, files = []) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+// ── .gitignore parser ──────────────────────────────────
+
+function parseGitignore(baseDir) {
+    const gitignorePath = path.join(baseDir, ".gitignore");
+    if (!fs.existsSync(gitignorePath)) return [];
+
+    const content = fs.readFileSync(gitignorePath, "utf8");
+    return content
+        .split("\n")
+        .map(l => l.trim())
+        .filter(l => l && !l.startsWith("#"));
+}
+
+function matchesGitignore(relPath, patterns) {
+    const normalized = relPath.replace(/\\/g, "/");
+    for (const pattern of patterns) {
+        const clean = pattern.replace(/^\//, "").replace(/\/$/, "");
+
+        // Exact match
+        if (normalized === clean) return true;
+
+        // Directory match (pattern ends with /)
+        if (pattern.endsWith("/") && normalized.startsWith(clean + "/")) return true;
+        if (pattern.endsWith("/") && normalized === clean) return true;
+
+        // Basename match (no slash in pattern = match anywhere)
+        if (!pattern.includes("/")) {
+            const basename = path.basename(normalized);
+            if (basename === clean) return true;
+            // Glob: *.ext
+            if (clean.startsWith("*.")) {
+                const ext = clean.slice(1);
+                if (basename.endsWith(ext)) return true;
+            }
+        }
+
+        // Path prefix match
+        if (normalized.startsWith(clean + "/")) return true;
+        if (normalized.startsWith(clean)) return true;
+    }
+    return false;
+}
+
+// ── File collector ─────────────────────────────────────
+
+function collectFiles(dir, baseDir, gitignorePatterns, files = []) {
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+        return files;
+    }
+
     for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
-        const relPath = path.relative(baseDir, fullPath);
+        const relPath = path.relative(baseDir, fullPath).replace(/\\/g, "/");
 
         if (entry.isDirectory()) {
-            if (IGNORE_DIRS.has(entry.name)) continue;
+            if (ALWAYS_IGNORE_DIRS.has(entry.name)) continue;
             if (entry.name.startsWith(".") && entry.name !== ".env") continue;
-            collectFiles(fullPath, baseDir, files);
+            if (matchesGitignore(relPath, gitignorePatterns)) continue;
+            collectFiles(fullPath, baseDir, gitignorePatterns, files);
         } else {
-            const ext = path.extname(entry.name).toLowerCase();
-            if (IGNORE_EXTS.has(ext)) continue;
+            if (ALWAYS_IGNORE_FILES.has(entry.name)) continue;
+            if (matchesGitignore(relPath, gitignorePatterns)) continue;
 
-            const stat = fs.statSync(fullPath);
-            if (stat.size > MAX_FILE_SIZE) continue;
-            if (stat.size === 0) continue;
+            try {
+                const stat = fs.statSync(fullPath);
+                if (stat.size > MAX_FILE_SIZE || stat.size === 0) continue;
 
-            files.push({
-                path: relPath.replace(/\\/g, "/"),
-                content: fs.readFileSync(fullPath),
-                size: stat.size,
-            });
+                files.push({
+                    path: relPath,
+                    content: fs.readFileSync(fullPath),
+                    size: stat.size,
+                });
+            } catch {
+                continue;
+            }
         }
     }
     return files;
 }
+
+// ── Framework auto-detection ───────────────────────────
+
+function detectFramework(cwd) {
+    const pkgPath = path.join(cwd, "package.json");
+    if (!fs.existsSync(pkgPath)) {
+        if (fs.existsSync(path.join(cwd, "index.html"))) return "static";
+        return "other";
+    }
+
+    try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+
+        if (deps["next"]) return "nextjs";
+        if (deps["nuxt"] || deps["nuxt3"]) return "nuxt";
+        if (deps["@sveltejs/kit"]) return "sveltekit";
+        if (deps["svelte"]) return "svelte";
+        if (deps["vue"]) return "vue";
+        if (deps["react"]) return "react";
+        if (deps["astro"]) return "astro";
+        if (deps["vite"]) return "vite";
+        return "node";
+    } catch {
+        return "other";
+    }
+}
+
+// ── Deploy ─────────────────────────────────────────────
 
 async function deploy(options = {}) {
     const chalk = (await import("chalk")).default;
@@ -63,18 +149,23 @@ async function deploy(options = {}) {
     const projectConfig = config.getProjectConfig(cwd);
     const projectName = options.name || projectConfig?.name || path.basename(cwd);
     const slug = options.slug || projectConfig?.slug || undefined;
+    const framework = detectFramework(cwd);
 
     console.log();
     console.log(chalk.bold("  ReDeploy Deploy"));
     console.log(chalk.dim("  ─────────────────────────────"));
-    console.log(chalk.dim(`  Project:  ${chalk.white(projectName)}`));
-    console.log(chalk.dim(`  Dir:      ${cwd}`));
-    console.log(chalk.dim(`  Server:   ${baseUrl}`));
+    console.log(chalk.dim(`  Project:    ${chalk.white(projectName)}`));
+    console.log(chalk.dim(`  Framework:  ${chalk.white(framework)}`));
+    console.log(chalk.dim(`  Dir:        ${cwd}`));
+    console.log(chalk.dim(`  Server:     ${baseUrl}`));
     console.log();
+
+    // Parse .gitignore
+    const gitignorePatterns = parseGitignore(cwd);
 
     // Collect files
     const spinner = ora("Scanning files...").start();
-    const files = collectFiles(cwd, cwd);
+    const files = collectFiles(cwd, cwd, gitignorePatterns);
 
     if (files.length === 0) {
         spinner.fail(chalk.red("No deployable files found"));
@@ -85,25 +176,26 @@ async function deploy(options = {}) {
 
     // Create zip in memory
     const archiver = (await import("archiver")).default;
-    const { Writable } = require("stream");
+    const { PassThrough } = require("stream");
 
     const chunks = [];
-    const bufferStream = new Writable({
-        write(chunk, encoding, callback) {
-            chunks.push(chunk);
-            callback();
-        },
-    });
+    const passthrough = new PassThrough();
+    passthrough.on("data", (chunk) => chunks.push(chunk));
 
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    archive.pipe(bufferStream);
+    const archive = archiver("zip", { zlib: { level: 6 } }); // level 6 = faster
+    archive.pipe(passthrough);
 
     for (const file of files) {
         archive.append(file.content, { name: file.path });
     }
 
+    archive.on("error", (err) => {
+        spinner.fail(chalk.red(`Packaging failed: ${err.message}`));
+        process.exit(1);
+    });
+
     await archive.finalize();
-    await new Promise((resolve) => bufferStream.on("finish", resolve));
+    await new Promise((resolve) => passthrough.on("end", resolve));
 
     const zipBuffer = Buffer.concat(chunks);
     const totalSize = files.reduce((s, f) => s + f.size, 0);
@@ -111,6 +203,10 @@ async function deploy(options = {}) {
     spinner.succeed(chalk.green(
         `Packaged ${files.length} files (${(totalSize / 1024).toFixed(0)} KB → ${(zipBuffer.length / 1024).toFixed(0)} KB zipped)`
     ));
+
+    if (gitignorePatterns.length > 0) {
+        console.log(chalk.dim(`  .gitignore: ${gitignorePatterns.length} patterns applied`));
+    }
 
     // Upload
     const uploadSpinner = ora("Uploading to ReDeploy...").start();
@@ -120,17 +216,36 @@ async function deploy(options = {}) {
         form.set("project_name", projectName);
         form.set("file", new Blob([zipBuffer], { type: "application/zip" }), `${projectName}.zip`);
         if (slug) form.set("vercel_slug", slug);
+        form.set("framework", framework);
 
         // Env vars from .redeploy.json
-        if (projectConfig?.env) {
+        if (projectConfig?.env && Object.keys(projectConfig.env).length > 0) {
             form.set("env_vars", JSON.stringify(projectConfig.env));
         }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
         const res = await fetch(`${baseUrl}/api/deploy/cli`, {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },
             body: form,
+            signal: controller.signal,
         });
+
+        clearTimeout(timeout);
+
+        if (!res.ok) {
+            let errMsg;
+            try {
+                const errData = await res.json();
+                errMsg = errData.error || `HTTP ${res.status}`;
+            } catch {
+                errMsg = `HTTP ${res.status} ${res.statusText}`;
+            }
+            uploadSpinner.fail(chalk.red(`Deploy failed: ${errMsg}`));
+            process.exit(1);
+        }
 
         const data = await res.json();
 
@@ -145,6 +260,9 @@ async function deploy(options = {}) {
             console.log(chalk.dim(`  Framework: ${data.framework}`));
         }
         console.log(chalk.dim(`  Files:     ${data.files_count}`));
+        if (data.url) {
+            console.log(chalk.dim(`  URL:       ${chalk.cyan(data.url)}`));
+        }
         console.log();
 
         // Stream build logs
@@ -154,23 +272,33 @@ async function deploy(options = {}) {
         await streamLogs(baseUrl, token, data.deployment_id, data.project_id, data.vercel_project_id, chalk);
 
     } catch (err) {
-        uploadSpinner.fail(chalk.red(`Upload failed: ${err.message}`));
+        if (err.name === "AbortError") {
+            uploadSpinner.fail(chalk.red("Upload timed out (60s). Check your network connection."));
+        } else {
+            uploadSpinner.fail(chalk.red(`Upload failed: ${err.message}`));
+        }
         process.exit(1);
     }
 }
 
+// ── Stream Logs ────────────────────────────────────────
+
 async function streamLogs(baseUrl, token, deploymentId, projectId, vercelProjectId, chalk) {
     let lastLogCount = 0;
     let done = false;
+    let retries = 0;
+    const maxRetries = 90; // 90 * 2s = 3 minutes max
 
-    while (!done) {
+    while (!done && retries < maxRetries) {
         await new Promise((r) => setTimeout(r, 2000));
+        retries++;
 
         // Check status
         try {
             const statusUrl = `${baseUrl}/api/deploy/status?deployment_id=${deploymentId}&project_id=${projectId}&vercel_project_id=${vercelProjectId}`;
             const statusRes = await fetch(statusUrl, {
                 headers: { Authorization: `Bearer ${token}` },
+                signal: AbortSignal.timeout(10000),
             });
             const status = await statusRes.json();
 
@@ -181,6 +309,7 @@ async function streamLogs(baseUrl, token, deploymentId, projectId, vercelProject
                 try {
                     const logRes = await fetch(`${baseUrl}/api/deploy/logs?deployment_id=${deploymentId}`, {
                         headers: { Authorization: `Bearer ${token}` },
+                        signal: AbortSignal.timeout(10000),
                     });
                     const logData = await logRes.json();
                     if (logData.logs?.length > lastLogCount) {
@@ -209,6 +338,7 @@ async function streamLogs(baseUrl, token, deploymentId, projectId, vercelProject
         try {
             const logRes = await fetch(`${baseUrl}/api/deploy/logs?deployment_id=${deploymentId}`, {
                 headers: { Authorization: `Bearer ${token}` },
+                signal: AbortSignal.timeout(10000),
             });
             const logData = await logRes.json();
             if (logData.logs?.length > lastLogCount) {
@@ -218,6 +348,12 @@ async function streamLogs(baseUrl, token, deploymentId, projectId, vercelProject
                 lastLogCount = logData.logs.length;
             }
         } catch { /* */ }
+    }
+
+    if (!done) {
+        console.log();
+        console.log(chalk.yellow("  ⚠ Timed out waiting for build. Check the dashboard for status."));
+        console.log();
     }
 }
 
@@ -239,6 +375,8 @@ function printLog(log, chalk) {
             console.log(prefix + chalk.dim(msg));
     }
 }
+
+// ── Init ───────────────────────────────────────────────
 
 async function init(options = {}) {
     const chalk = (await import("chalk")).default;
@@ -262,6 +400,7 @@ async function init(options = {}) {
     }
 
     const pm = detectPM();
+    const framework = detectFramework(cwd);
 
     // ── Create .redeploy.json ──────────────────────────
     const existing = config.getProjectConfig(cwd);
@@ -278,7 +417,7 @@ async function init(options = {}) {
             "$schema": "https://deploy.revy.my.id/schema/redeploy.json",
             name: projectName,
             slug: projectName.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
-            framework: "auto",
+            framework: framework,
             packageManager: pm.name,
             env: {},
         };
@@ -348,6 +487,7 @@ async function init(options = {}) {
     console.log(chalk.bold("  ReDeploy Init"));
     console.log(chalk.dim("  ─────────────────────────────"));
     console.log(chalk.dim(`  Package manager: ${chalk.white(pm.name)}`));
+    console.log(chalk.dim(`  Framework:       ${chalk.white(framework)}`));
     console.log();
 
     if (configCreated) {
@@ -381,4 +521,3 @@ async function init(options = {}) {
 }
 
 module.exports = { deploy, init };
-
