@@ -1,11 +1,11 @@
 {
     "name": "redeploy-cli",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "ReDeploy CLI — Deploy to the edge from your terminal",
     "author": "ReDeploy",
     "license": "MIT",
     "bin": {
-        "redeploy": "./bin/redeploy.js"
+        "redeploy": "bin/redeploy.js"
     },
     "repository": {
         "type": "git",
