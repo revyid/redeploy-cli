@@ -2,7 +2,7 @@
  * ReDeploy CLI — Deploy Module
  * Handles project zipping, upload, and live log streaming.
  * 
- * @module devscale/deploy
+ * @module redeploy/deploy
  * @private
  */
 
@@ -116,9 +116,6 @@ async function deploy(options = {}) {
     const uploadSpinner = ora("Uploading to ReDeploy...").start();
 
     try {
-        const fetch = (await import("node-fetch")).default;
-        const { FormData, Blob } = await import("node-fetch");
-
         const form = new FormData();
         form.set("project_name", projectName);
         form.set("file", new Blob([zipBuffer], { type: "application/zip" }), `${projectName}.zip`);
@@ -163,7 +160,6 @@ async function deploy(options = {}) {
 }
 
 async function streamLogs(baseUrl, token, deploymentId, projectId, vercelProjectId, chalk) {
-    const fetch = (await import("node-fetch")).default;
     let lastLogCount = 0;
     let done = false;
 
@@ -251,7 +247,7 @@ async function init(options = {}) {
     const existing = config.getProjectConfig(cwd);
 
     if (existing && !options.force) {
-        console.log(chalk.yellow("\n  ⚠ .devscale.json already exists"));
+        console.log(chalk.yellow("\n  ⚠ .redeploy.json already exists"));
         console.log(chalk.dim("  Use --force to overwrite\n"));
         return;
     }
@@ -266,12 +262,12 @@ async function init(options = {}) {
     config.writeProjectConfig(cwd, cfg);
 
     console.log();
-    console.log(chalk.green("  ✓ Created .devscale.json"));
+    console.log(chalk.green("  ✓ Created .redeploy.json"));
     console.log(chalk.dim(`  Project: ${cfg.name}`));
     console.log(chalk.dim(`  Slug:    ${cfg.slug}.vercel.app`));
     console.log();
     console.log(chalk.dim("  Add environment variables to the 'env' field."));
-    console.log(chalk.dim("  Then run: devscale deploy"));
+    console.log(chalk.dim("  Then run: redeploy deploy"));
     console.log();
 }
 

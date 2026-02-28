@@ -2,7 +2,7 @@
  * ReDeploy CLI — Browser-based Authentication
  * Opens browser for OAuth, captures token via local HTTP server.
  * 
- * @module devscale/auth
+ * @module redeploy/auth
  * @private
  */
 
@@ -147,7 +147,6 @@ async function whoami() {
     const baseUrl = config.getBaseUrl();
 
     try {
-        const fetch = (await import("node-fetch")).default;
         const res = await fetch(`${baseUrl}/api/auth/cli/verify`, {
             headers: { Authorization: `Bearer ${token}` },
         });
@@ -160,7 +159,7 @@ async function whoami() {
             console.log(chalk.dim(`  Server:   ${baseUrl}`));
         } else {
             spinner.fail(chalk.red("Token expired or invalid"));
-            console.log(chalk.dim("  Run: devscale login"));
+            console.log(chalk.dim("  Run: redeploy login"));
         }
     } catch (err) {
         spinner.fail(chalk.red("Could not verify: " + err.message));

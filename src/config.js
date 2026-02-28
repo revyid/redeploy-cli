@@ -131,5 +131,7 @@ module.exports = {
     clearAuth,
     setUserInfo,
     getUserInfo,
+    readConfig,
+    writeConfig,
     CONFIG_DIR,
 };

@@ -14,6 +14,7 @@ const { deploy, init } = require("./deploy");
 const config = require("./config");
 
 const VERSION = process.env.REDEPLOY_CLI_VERSION || "1.0.0";
+const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 
 const program = new Command();
 
@@ -21,6 +22,41 @@ program
     .name("redeploy")
     .description("ReDeploy CLI — Deploy to the edge from your terminal")
     .version(VERSION, "-v, --version");
+
+// ── Auto-update check ─────────────────────────────────
+
+async function checkForUpdate() {
+    try {
+        const cfg = config.readConfig ? config.readConfig() : {};
+        const lastCheck = cfg._lastUpdateCheck || 0;
+        if (Date.now() - lastCheck < UPDATE_CHECK_INTERVAL) return;
+
+        const res = await fetch("https://raw.githubusercontent.com/revyid/redeploy-cli/main/package.json", {
+            signal: AbortSignal.timeout(3000),
+        });
+        if (!res.ok) return;
+
+        const remote = await res.json();
+        const remoteVersion = remote.version;
+
+        // Save last check time
+        if (config.writeConfig) {
+            const c = config.readConfig ? config.readConfig() : {};
+            c._lastUpdateCheck = Date.now();
+            config.writeConfig(c);
+        }
+
+        if (remoteVersion && remoteVersion !== VERSION) {
+            const chalk = (await import("chalk")).default;
+            console.log();
+            console.log(chalk.yellow(`  ⚠ Update available: ${chalk.dim(VERSION)} → ${chalk.bold(remoteVersion)}`));
+            console.log(chalk.dim("    Run: npm install -g github:revyid/redeploy-cli"));
+            console.log();
+        }
+    } catch {
+        // Silently ignore — never block CLI usage for update checks
+    }
+}
 
 // ── login ──────────────────────────────────────────────
 program
@@ -108,9 +144,17 @@ program
         }
     });
 
-program.parse(process.argv);
+// ── Run ────────────────────────────────────────────────
 
-// Show help if no command
-if (!process.argv.slice(2).length) {
-    program.outputHelp();
+async function main() {
+    // Check for updates in background (non-blocking)
+    await checkForUpdate();
+    program.parse(process.argv);
+
+    // Show help if no command
+    if (!process.argv.slice(2).length) {
+        program.outputHelp();
+    }
 }
+
+main();
