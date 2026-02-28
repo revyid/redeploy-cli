@@ -31,7 +31,7 @@ async function checkForUpdate() {
         const lastCheck = cfg._lastUpdateCheck || 0;
         if (Date.now() - lastCheck < UPDATE_CHECK_INTERVAL) return;
 
-        const res = await fetch("https://raw.githubusercontent.com/revyid/redeploy-cli/main/package.json", {
+        const res = await fetch("https://registry.npmjs.org/redeploy-cli/latest", {
             signal: AbortSignal.timeout(3000),
         });
         if (!res.ok) return;
@@ -50,7 +50,7 @@ async function checkForUpdate() {
             const chalk = (await import("chalk")).default;
             console.log();
             console.log(chalk.yellow(`  ⚠ Update available: ${chalk.dim(VERSION)} → ${chalk.bold(remoteVersion)}`));
-            console.log(chalk.dim("    Run: npm install -g github:revyid/redeploy-cli"));
+            console.log(chalk.dim("    Run: npm install -g redeploy-cli"));
             console.log();
         }
     } catch {

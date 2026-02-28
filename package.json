@@ -11,6 +11,7 @@
         "type": "git",
         "url": "git+https://github.com/revyid/redeploy-cli.git"
     },
+    "type": "commonjs",
     "main": "./src/index.js",
     "files": [
         "bin/",
@@ -19,7 +20,13 @@
         "LICENSE",
         "README.md"
     ],
-    "scripts": {},
+    "scripts": {
+        "postinstall": "node scripts/postinstall.js"
+    },
+    "homepage": "https://deploy.revy.my.id",
+    "bugs": {
+        "url": "https://github.com/revyid/redeploy-cli/issues"
+    },
     "dependencies": {
         "chalk": "^5.4.1",
         "commander": "^13.1.0",

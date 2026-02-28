@@ -5,7 +5,7 @@
  * Auto-generates package.json scripts AND .redeploy.json config.
  * Detects package manager (npm, pnpm, yarn, bun) automatically.
  *
- * Install via: npm install github:revyid/redeploy --save-dev
+ * Install via: npm install redeploy-cli --save-dev
  */
 
 "use strict";

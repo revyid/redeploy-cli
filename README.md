@@ -5,17 +5,14 @@ Deploy to the edge from your terminal.
 ## Installation
 
 ```bash
-# npm
-npm install github:revyid/redeploy --save-dev
+# Global (recommended)
+npm install -g redeploy-cli
 
-# pnpm
-pnpm add github:revyid/redeploy -D
-
-# yarn
-yarn add github:revyid/redeploy --dev
-
-# bun
-bun add github:revyid/redeploy --dev
+# Or as a dev dependency
+npm install redeploy-cli --save-dev
+# pnpm add redeploy-cli -D
+# yarn add redeploy-cli --dev
+# bun add redeploy-cli --dev
 ```
 
 On install, the CLI **auto-detects your package manager** and:
@@ -49,12 +46,14 @@ On install, the CLI **auto-detects your package manager** and:
 ## Quick Start
 
 ```bash
-# npm                          # pnpm                      # yarn / bun
-npm run redeploy:login          pnpm run redeploy:login      yarn redeploy:login
-npm run deploy                  pnpm run deploy              yarn deploy
+# Authenticate
+redeploy login
 
-# Or use directly
-npx redeploy deploy             pnpm exec redeploy deploy    bunx redeploy deploy
+# Deploy your project
+redeploy deploy
+
+# Or via package scripts
+npm run deploy
 ```
 
 ## Commands
