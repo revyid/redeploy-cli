@@ -244,31 +244,115 @@ async function init(options = {}) {
     const chalk = (await import("chalk")).default;
 
     const cwd = process.cwd();
-    const existing = config.getProjectConfig(cwd);
+    const pkgPath = path.join(cwd, "package.json");
 
-    if (existing && !options.force) {
-        console.log(chalk.yellow("\n  ⚠ .redeploy.json already exists"));
-        console.log(chalk.dim("  Use --force to overwrite\n"));
-        return;
+    // ── Detect package manager ─────────────────────────
+    function detectPM() {
+        const checks = [
+            { file: "bun.lockb", name: "bun", run: "bun run", exec: "bunx" },
+            { file: "bun.lock", name: "bun", run: "bun run", exec: "bunx" },
+            { file: "pnpm-lock.yaml", name: "pnpm", run: "pnpm run", exec: "pnpm exec" },
+            { file: "yarn.lock", name: "yarn", run: "yarn", exec: "yarn" },
+            { file: "package-lock.json", name: "npm", run: "npm run", exec: "npx" },
+        ];
+        for (const c of checks) {
+            if (fs.existsSync(path.join(cwd, c.file))) return c;
+        }
+        return { name: "npm", run: "npm run", exec: "npx" };
     }
 
-    const projectName = options.name || path.basename(cwd);
-    const cfg = {
-        name: projectName,
-        slug: projectName.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
-        env: {},
+    const pm = detectPM();
+
+    // ── Create .redeploy.json ──────────────────────────
+    const existing = config.getProjectConfig(cwd);
+    let configCreated = false;
+
+    if (existing && !options.force) {
+        // Config exists, don't overwrite
+    } else {
+        const projectName = options.name || (fs.existsSync(pkgPath)
+            ? JSON.parse(fs.readFileSync(pkgPath, "utf8")).name || path.basename(cwd)
+            : path.basename(cwd));
+
+        const cfg = {
+            "$schema": "https://deploy.revy.my.id/schema/redeploy.json",
+            name: projectName,
+            slug: projectName.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+            framework: "auto",
+            packageManager: pm.name,
+            env: {},
+        };
+
+        config.writeProjectConfig(cwd, cfg);
+        configCreated = true;
+    }
+
+    // ── Inject scripts into package.json ───────────────
+    const SCRIPTS = {
+        "deploy": "redeploy deploy",
+        "redeploy": "redeploy",
+        "redeploy:login": "redeploy login",
+        "redeploy:init": "redeploy init",
+        "redeploy:whoami": "redeploy whoami",
+        "redeploy:logout": "redeploy logout",
     };
 
-    config.writeProjectConfig(cwd, cfg);
+    let scriptsAdded = 0;
+    const skippedScripts = [];
+
+    if (fs.existsSync(pkgPath)) {
+        try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            if (!pkg.scripts) pkg.scripts = {};
+
+            for (const [key, value] of Object.entries(SCRIPTS)) {
+                if (pkg.scripts[key] && pkg.scripts[key] !== value) {
+                    skippedScripts.push(key);
+                    continue;
+                }
+                if (pkg.scripts[key] === value) continue;
+                pkg.scripts[key] = value;
+                scriptsAdded++;
+            }
+
+            if (scriptsAdded > 0) {
+                fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+            }
+        } catch { /* skip */ }
+    }
+
+    // ── Print summary ──────────────────────────────────
+    console.log();
+    console.log(chalk.bold("  ReDeploy Init"));
+    console.log(chalk.dim("  ─────────────────────────────"));
+    console.log(chalk.dim(`  Package manager: ${chalk.white(pm.name)}`));
+    console.log();
+
+    if (configCreated) {
+        console.log(chalk.green("  ✓ Created .redeploy.json"));
+    } else if (existing) {
+        console.log(chalk.dim("  ⊘ .redeploy.json already exists (use --force to overwrite)"));
+    }
+
+    if (scriptsAdded > 0) {
+        console.log(chalk.green(`  ✓ Added ${scriptsAdded} script(s) to package.json:`));
+        for (const [key, value] of Object.entries(SCRIPTS)) {
+            if (!skippedScripts.includes(key)) {
+                console.log(chalk.dim(`    ${key}`) + " → " + chalk.cyan(value));
+            }
+        }
+    }
+
+    if (skippedScripts.length > 0) {
+        console.log(chalk.yellow(`  ⚠ Skipped (already defined): ${skippedScripts.join(", ")}`));
+    }
 
     console.log();
-    console.log(chalk.green("  ✓ Created .redeploy.json"));
-    console.log(chalk.dim(`  Project: ${cfg.name}`));
-    console.log(chalk.dim(`  Slug:    ${cfg.slug}.vercel.app`));
-    console.log();
-    console.log(chalk.dim("  Add environment variables to the 'env' field."));
-    console.log(chalk.dim("  Then run: redeploy deploy"));
+    console.log(chalk.dim("  Quick start:"));
+    console.log(chalk.cyan(`    ${pm.run} redeploy:login`) + chalk.dim("   — Authenticate via browser"));
+    console.log(chalk.cyan(`    ${pm.run} deploy`) + chalk.dim("           — Deploy your project"));
     console.log();
 }
 
 module.exports = { deploy, init };
+
