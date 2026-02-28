@@ -7,6 +7,10 @@
     "bin": {
         "redeploy": "./bin/redeploy.js"
     },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/revyid/redeploy-cli.git"
+    },
     "main": "./src/index.js",
     "files": [
         "bin/",
@@ -31,9 +35,5 @@
         "cli",
         "vercel",
         "edge"
-    ],
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/revyid/redeploy"
-    }
+    ]
 }
