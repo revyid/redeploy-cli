@@ -321,6 +321,28 @@ async function init(options = {}) {
         } catch { /* skip */ }
     }
 
+    // ── Add .redeploy.json to .gitignore ──────────────
+    let gitignoreUpdated = false;
+    const gitignorePath = path.join(cwd, ".gitignore");
+
+    try {
+        let content = "";
+        if (fs.existsSync(gitignorePath)) {
+            content = fs.readFileSync(gitignorePath, "utf8");
+        }
+
+        const entries = [".redeploy.json"];
+        const toAdd = entries.filter(e => !content.split("\n").some(line => line.trim() === e));
+
+        if (toAdd.length > 0) {
+            const separator = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
+            const header = content.length === 0 ? "" : separator;
+            const block = `${header}\n# ReDeploy\n${toAdd.join("\n")}\n`;
+            fs.appendFileSync(gitignorePath, block);
+            gitignoreUpdated = true;
+        }
+    } catch { /* skip */ }
+
     // ── Print summary ──────────────────────────────────
     console.log();
     console.log(chalk.bold("  ReDeploy Init"));
@@ -332,6 +354,10 @@ async function init(options = {}) {
         console.log(chalk.green("  ✓ Created .redeploy.json"));
     } else if (existing) {
         console.log(chalk.dim("  ⊘ .redeploy.json already exists (use --force to overwrite)"));
+    }
+
+    if (gitignoreUpdated) {
+        console.log(chalk.green("  ✓ Added .redeploy.json to .gitignore"));
     }
 
     if (scriptsAdded > 0) {
