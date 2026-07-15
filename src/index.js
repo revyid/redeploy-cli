@@ -13,7 +13,11 @@ const { login, logout, whoami } = require("./auth");
 const { deploy, init } = require("./deploy");
 const config = require("./config");
 
-const VERSION = process.env.REDEPLOY_CLI_VERSION || "1.0.0";
+let VERSION = "1.0.2";
+try {
+    const pkgPath = require.resolve("../package.json");
+    VERSION = JSON.parse(require("fs").readFileSync(pkgPath, "utf8")).version;
+} catch {}
 const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 
 const program = new Command();
@@ -50,7 +54,7 @@ async function checkForUpdate() {
             const chalk = (await import("chalk")).default;
             console.log();
             console.log(chalk.yellow(`  ⚠ Update available: ${chalk.dim(VERSION)} → ${chalk.bold(remoteVersion)}`));
-            console.log(chalk.dim("    Run: npm install -g redeploy-cli"));
+            console.log(chalk.dim("    Run: pnpm update redeploy-cli"));
             console.log();
         }
     } catch {
